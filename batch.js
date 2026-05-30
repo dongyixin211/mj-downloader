@@ -3,6 +3,7 @@ const skipQueriedEl = document.getElementById("skip-queried")
 const autoDownloadEl = document.getElementById("auto-download")
 const skipDownloadedEl = document.getElementById("skip-downloaded")
 const parallelEl = document.getElementById("parallel-count")
+const maxCollectEl = document.getElementById("max-collect")
 const subdirEl = document.getElementById("download-subdir")
 const previewList = document.getElementById("preview-list")
 const previewStats = document.getElementById("preview-stats")
@@ -208,6 +209,7 @@ startBtn.addEventListener("click", async () => {
       autoDownload: autoDownloadEl.checked,
       skipDownloaded: skipDownloadedEl.checked,
       parallel: Number(parallelEl.value) || 3,
+      maxCollect: Number(maxCollectEl.value) || 1000,
       downloadSubDir: subdirEl.value.trim(),
     })
     saveDraft()

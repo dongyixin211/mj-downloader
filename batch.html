@@ -47,8 +47,13 @@
             <span>并行查询数</span>
             <input type="number" id="parallel-count" min="1" max="3" value="1" />
           </label>
+          <label class="field inline">
+            <span>每条最多采集数</span>
+            <input type="number" id="max-collect" min="50" max="5000" value="1000" />
+          </label>
           <p class="hint">
             建议保持 1（逐个执行最稳定）。设为 2–3 时仅并行查询，下载仍逐个进行。
+            每条最多采集数默认 1000，API 分页 + 页面滚动合并去重。
           </p>
           <label class="field inline wide">
             <span>下载子目录（可选）</span>

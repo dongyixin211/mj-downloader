@@ -75,6 +75,45 @@ function waitTabComplete(tabId, timeoutMs = 60000) {
   })
 }
 
+async function pingContentScript(tabId) {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: "content-ping",
+    })
+    return response?.ok === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 等待 Midjourney 页面 content script 就绪（由 manifest 注入，勿重复 executeScript 以免重复声明报错）。
+ */
+async function ensureContentScriptReady(tabId, timeoutMs = 120000) {
+  const start = Date.now()
+  let activated = false
+
+  while (Date.now() - start < timeoutMs) {
+    if (await pingContentScript(tabId)) return
+
+    if (!activated && Date.now() - start > 2500) {
+      try {
+        await chrome.tabs.update(tabId, { active: true })
+        activated = true
+        await sleep(800)
+      } catch {
+        /* tab may be closed */
+      }
+    }
+
+    await sleep(450)
+  }
+
+  throw new Error(
+    "无法连接 Midjourney 页面脚本，请确认已登录 Midjourney，并在 chrome://extensions 重新加载本扩展后重试",
+  )
+}
+
 async function sendTabMessage(tabId, message, timeoutMs = 600000) {
   const start = Date.now()
   let lastError = null
@@ -88,6 +127,110 @@ async function sendTabMessage(tabId, message, timeoutMs = 600000) {
     }
   }
   throw lastError || new Error("内容脚本无响应")
+}
+
+async function tryMainWorldExploreSearch(tabId, prompt) {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: async (searchPrompt) => {
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+      const isVisible = (el) => {
+        if (!el) return false
+        const rect = el.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
+      }
+
+      const clickSearchImages = () => {
+        for (const el of document.querySelectorAll(
+          "button,a,[role=button],label,span,div",
+        )) {
+          if (!isVisible(el)) continue
+          const text = (el.textContent || "").trim().toLowerCase()
+          const aria = (el.getAttribute("aria-label") || "").toLowerCase()
+          if (
+            text === "search images" ||
+            aria.includes("search images") ||
+            /\bsearch images\b/.test(`${text} ${aria}`)
+          ) {
+            const btn = el.closest("button,a,[role=button],label") || el
+            btn.click()
+            return true
+          }
+        }
+        return false
+      }
+
+      clickSearchImages()
+      await sleep(900)
+
+      let input = null
+      let bestScore = -1
+      for (const el of document.querySelectorAll(
+        'input, [role="searchbox"], [contenteditable="true"]',
+      )) {
+        if (!isVisible(el)) continue
+        const hint = `${el.placeholder || ""} ${el.getAttribute("aria-label") || ""}`.toLowerCase()
+        if (hint.includes("imagine") || hint.includes("what will you")) continue
+        let score = 0
+        if (hint.includes("search images")) score = 100
+        else if (hint.includes("search")) score = 70
+        else continue
+        const rect = el.getBoundingClientRect()
+        if (rect.left > window.innerWidth * 0.5) score += 20
+        if (score > bestScore) {
+          bestScore = score
+          input = el
+        }
+      }
+
+      if (!input) return { ok: false, error: "input_not_found" }
+
+      input.focus()
+      input.click()
+      await sleep(200)
+
+      if (input.isContentEditable) {
+        input.textContent = searchPrompt
+      } else {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set
+        setter?.call(input, searchPrompt)
+      }
+
+      input.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertFromPaste",
+          data: searchPrompt,
+        }),
+      )
+      input.dispatchEvent(new Event("change", { bubbles: true }))
+
+      for (const type of ["keydown", "keypress", "keyup"]) {
+        input.dispatchEvent(
+          new KeyboardEvent(type, {
+            key: "Enter",
+            code: "Enter",
+            keyCode: 13,
+            bubbles: true,
+          }),
+        )
+      }
+
+      await sleep(2500)
+      return {
+        ok: true,
+        value: input.value || input.textContent || "",
+        href: location.href,
+      }
+    },
+    args: [prompt],
+  })
+  return result?.result || { ok: false, error: "main_world_no_result" }
 }
 
 async function createExploreTab(activate) {
@@ -108,14 +251,24 @@ async function createExploreTab(activate) {
 /** 阶段1：仅查询采集，不在标签页内下载 */
 async function queryPromptInTab(prompt, options) {
   const tab = await createExploreTab(options.activateTab)
+  const maxCollect = Math.min(
+    Math.max(Number(options.maxCollect) || 1000, 50),
+    5000,
+  )
 
   try {
+    await updateBatchProgress({
+      current: [`连接 Midjourney 页面: ${prompt.slice(0, 40)}…`],
+    })
+    await ensureContentScriptReady(tab.id)
+
     const result = await sendTabMessage(tab.id, {
       type: "batch-run-prompt",
       prompt,
       autoDownload: false,
       skipDownloaded: false,
       downloadSubDir: "",
+      maxCollect,
     })
 
     if (!result?.ok) {
@@ -210,6 +363,7 @@ async function downloadUrlsForPrompt(imageUrls, options) {
 async function processOnePrompt(prompt, config, options = {}) {
   const queryResult = await queryPromptInTab(prompt, {
     activateTab: options.activateTab ?? config.parallel === 1,
+    maxCollect: config.maxCollect,
   })
 
   let downloadStats = { successCount: 0, failCount: 0, skippedCount: 0 }
@@ -333,7 +487,10 @@ async function runBatchJob(config) {
 
           const queryResults = await Promise.allSettled(
             chunk.map((prompt) =>
-              queryPromptInTab(prompt, { activateTab: false }),
+              queryPromptInTab(prompt, {
+                activateTab: false,
+                maxCollect: config.maxCollect,
+              }),
             ),
           )
 

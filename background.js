@@ -337,6 +337,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           autoDownload: message.autoDownload,
           skipDownloaded: message.skipDownloaded,
           parallel: message.parallel,
+          maxCollect: message.maxCollect,
           downloadSubDir: message.downloadSubDir,
         })
         safeRespond({ ok: true, ...result })
@@ -356,6 +357,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getBatchProgress()
       .then((progress) => sendResponse({ ok: true, progress }))
       .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+  if (message?.type === "batch-step-progress") {
+    updateBatchProgress({ current: [message.step || "处理中…"] })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+  if (message?.type === "main-world-explore-search") {
+    const tabId = sender.tab?.id
+    if (!tabId) {
+      safeRespond({ ok: false, error: "无法获取 Midjourney 标签页" })
+      return false
+    }
+    tryMainWorldExploreSearch(tabId, message.prompt || "")
+      .then((result) => safeRespond({ ok: Boolean(result?.ok), ...result }))
+      .catch((error) => safeRespond({ ok: false, error: error.message }))
     return true
   }
   return false

@@ -55,19 +55,6 @@ let mutationDebounceTimer = null
 let domObserver = null
 let intersectionObserver = null
 
-const MJ_CDN_PATTERN = /cdn\.midjourney\.com/i
-
-function normalizeImageUrl(url) {
-  if (!url) return ""
-  let normalized = url.trim().replace(/&amp;/g, "&")
-  normalized = normalized.split("?")[0].split("#")[0]
-  // 仅统一扩展名，保留完整路径，避免不同变体被合并成同一张
-  if (MJ_CDN_PATTERN.test(normalized)) {
-    normalized = normalized.replace(/\.(png|jpe?g|gif)$/i, ".webp")
-  }
-  return normalized
-}
-
 function parseCssUrl(value) {
   if (!value || value === "none") return ""
   const match = value.match(/url\(["']?(.*?)["']?\)/i)
@@ -498,34 +485,6 @@ function initializeCheckboxSystem() {
     }
   })
 }
-function ensureWebpUrl(imageUrl) {
-  if (/\.webp$/i.test(imageUrl)) return imageUrl
-  if (/\.png$/i.test(imageUrl)) return imageUrl.replace(/\.png$/i, ".webp")
-  return `${imageUrl.replace(/\/$/, "")}.webp`
-}
-
-function getDownloadUrlCandidates(imageUrl) {
-  const webpUrl = ensureWebpUrl(imageUrl)
-  const candidates = [webpUrl]
-  const gridPng = webpUrl.replace(
-    /(\/[a-f0-9-]+\/\d+_\d+)(_[^/]*)?\.webp$/i,
-    "$1.png",
-  )
-  if (gridPng !== webpUrl && !candidates.includes(gridPng)) {
-    candidates.push(gridPng)
-  }
-  return candidates
-}
-
-function hashUrlFingerprint(url) {
-  const text = String(url || "")
-  let hash = 5381
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash * 33) ^ text.charCodeAt(i)
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0")
-}
-
 async function requestBackgroundDownload(url, filename, sourceUrl) {
   let lastError
   for (let attempt = 0; attempt < DOWNLOAD_RETRY_TIMES; attempt++) {
@@ -591,49 +550,6 @@ async function downloadSingleImage(imageUrl) {
     await downloadViaPageFetch(imageUrl, finalFilename)
   } catch (fetchError) {
     throw lastError || fetchError
-  }
-}
-function sanitizeFilenamePart(part) {
-  return String(part)
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
-    .replace(/\s+/g, "_")
-    .slice(0, 100)
-}
-
-/** 从 CDN URL 生成唯一文件名：任务ID + 索引 + URL指纹，避免 0_0_384_N 重名 */
-function deriveDownloadFilename(url, sourceUrlForFingerprint) {
-  const fingerprint = hashUrlFingerprint(
-    normalizeImageUrl(sourceUrlForFingerprint || url),
-  )
-
-  try {
-    const parsed = new URL(url)
-    const segments = parsed.pathname.split("/").filter(Boolean)
-    const lastSeg = segments[segments.length - 1] || "image.webp"
-    const extMatch = lastSeg.match(/\.(webp|png|jpe?g|gif)$/i)
-    const ext = extMatch ? extMatch[1].toLowerCase() : "webp"
-    const fileStem = sanitizeFilenamePart(
-      lastSeg.replace(/\.(webp|png|jpe?g|gif)$/i, ""),
-    )
-
-    const uuidSeg = segments.find((s) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        s,
-      ),
-    )
-
-    if (uuidSeg) {
-      return `${sanitizeFilenamePart(uuidSeg)}_${fileStem}_${fingerprint}.${ext}`
-    }
-
-    if (segments.length >= 2) {
-      const parent = sanitizeFilenamePart(segments[segments.length - 2])
-      return `${parent}_${fileStem}_${fingerprint}.${ext}`
-    }
-
-    return `${fileStem}_${fingerprint}.${ext}`
-  } catch {
-    return `mj_${fingerprint}_${Date.now()}.webp`
   }
 }
 function createSelectCurrentPageButton() {
@@ -723,7 +639,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function runAutoScrollHarvest(scroller, collected, button) {
+async function runAutoScrollHarvest(scroller, collected, button, options = {}) {
   if (scroller.scrollToTop) {
     scroller.scrollToTop()
     await sleep(500)
@@ -740,9 +656,10 @@ async function runAutoScrollHarvest(scroller, collected, button) {
   const stuckThreshold = document.hidden ? 10 : 6
   const stepSleepMs = document.hidden ? 1100 : 750
   let iterations = 0
-  const maxIterations = 600
+  const maxIterations = options.maxIterations ?? 600
 
   while (!autoScrollAbort && iterations < maxIterations) {
+    if (options.maxCollect && collected.size >= options.maxCollect) break
     iterations++
     harvestAllVisibleImageUrls().forEach((url) => collected.add(url))
 
@@ -1572,51 +1489,136 @@ function setNativeInputValue(el, value) {
   else el.value = value
 }
 
+function getInputHint(el) {
+  return `${el.placeholder || ""} ${el.getAttribute("aria-label") || ""} ${el.name || ""} ${el.className || ""}`.toLowerCase()
+}
+
+function isMainCreatePromptInput(el) {
+  const hint = getInputHint(el)
+  return (
+    hint.includes("imagine") ||
+    hint.includes("what will you") ||
+    hint.includes("describe") ||
+    (hint.includes("prompt") && !hint.includes("search"))
+  )
+}
+
+function scoreExploreSearchInput(el) {
+  const hint = getInputHint(el)
+  if (isMainCreatePromptInput(el)) return -100
+  let score = 0
+  if (hint.includes("search images")) score = 100
+  else if (hint.includes("search image")) score = 95
+  else if (el.type === "search") score = 80
+  else if (hint.includes("search")) score = 70
+  else if (hint.includes("explore")) score = 40
+  else if (hint.includes("filter")) score = 30
+  else return 0
+
+  const rect = el.getBoundingClientRect()
+  if (rect.left > window.innerWidth * 0.55) score += 20
+  if (rect.top < 140) score += 8
+  return score
+}
+
 function findExploreSearchInput() {
-  const scopedSelectors = [
-    'header input[type="search"]',
-    'header input[type="text"]',
-    'nav input[type="search"]',
-    '[class*="search"] input',
-    '[data-testid*="search"] input',
-  ]
-
-  for (const selector of scopedSelectors) {
-    for (const el of document.querySelectorAll(selector)) {
-      if (isVisibleElement(el)) return el
-    }
-  }
-
   const selectors = [
+    'input[placeholder*="Search Images" i]',
+    'input[aria-label*="Search Images" i]',
     'input[type="search"]',
     'input[placeholder*="Search" i]',
-    'input[placeholder*="search" i]',
-    'input[placeholder*="Explore" i]',
-    'input[placeholder*="style" i]',
-    'input[placeholder*="prompt" i]',
-    'input[aria-label*="search" i]',
     'input[aria-label*="Search" i]',
     '[role="searchbox"]',
+    '[class*="search"] input',
+    '[data-testid*="search"] input',
+    "input",
   ]
+
+  const seen = new Set()
+  const candidates = []
 
   for (const selector of selectors) {
     for (const el of document.querySelectorAll(selector)) {
-      if (isVisibleElement(el)) return el
+      if (!(el instanceof HTMLInputElement) || seen.has(el)) continue
+      seen.add(el)
+      if (!isVisibleElement(el)) continue
+      const score = scoreExploreSearchInput(el)
+      if (score > 0) candidates.push({ el, score })
     }
   }
 
-  return [...document.querySelectorAll("input")]
-    .filter(isVisibleElement)
-    .find((el) => {
-      const hint = `${el.placeholder || ""} ${el.getAttribute("aria-label") || ""} ${el.className || ""}`.toLowerCase()
-      return (
-        hint.includes("search") ||
-        hint.includes("explore") ||
-        hint.includes("style") ||
-        hint.includes("prompt") ||
-        hint.includes("filter")
-      )
-    })
+  for (const el of document.querySelectorAll('[role="searchbox"], [contenteditable="true"]')) {
+    if (seen.has(el) || !isVisibleElement(el)) continue
+    seen.add(el)
+    const hint = getInputHint(el)
+    if (isMainCreatePromptInput(el)) continue
+    if (hint.includes("search images") || hint.includes("search")) {
+      candidates.push({ el, score: hint.includes("search images") ? 100 : 75 })
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score)
+  return candidates[0]?.el || null
+}
+
+function clickExploreSearchImagesTrigger() {
+  const directSelectors = [
+    'button[aria-label*="Search Images" i]',
+    'a[aria-label*="Search Images" i]',
+    '[role="button"][aria-label*="Search Images" i]',
+    'input[placeholder*="Search Images" i]',
+    'input[aria-label*="Search Images" i]',
+  ]
+  for (const selector of directSelectors) {
+    const el = document.querySelector(selector)
+    if (el && isVisibleElement(el)) {
+      el.focus?.()
+      el.click()
+      return true
+    }
+  }
+
+  for (const el of document.querySelectorAll("button, a, [role='button'], label")) {
+    if (!isVisibleElement(el)) continue
+    const label = `${el.textContent || ""} ${el.getAttribute("aria-label") || ""}`
+      .trim()
+      .toLowerCase()
+    if (label === "search images" || /\bsearch images\b/.test(label)) {
+      el.click()
+      return true
+    }
+  }
+
+  for (const el of document.querySelectorAll("span, div, p")) {
+    if (!isVisibleElement(el)) continue
+    if ((el.textContent || "").trim().toLowerCase() !== "search images") continue
+    const clickable = el.closest("button, a, label, [role='button']") || el
+    clickable.click()
+    return true
+  }
+
+  return false
+}
+
+async function openExploreImageSearchInput(maxWaitMs = 20000) {
+  const start = Date.now()
+
+  while (Date.now() - start < maxWaitMs) {
+    const ready = findExploreSearchInput()
+    if (ready && scoreExploreSearchInput(ready) >= 95) return ready
+
+    clickExploreSearchImagesTrigger()
+    await sleep(700)
+
+    const input = findExploreSearchInput()
+    if (input && scoreExploreSearchInput(input) >= 70) return input
+
+    await sleep(450)
+  }
+
+  const fallback = findExploreSearchInput()
+  if (fallback && scoreExploreSearchInput(fallback) >= 70) return fallback
+  return null
 }
 
 async function ensureExplorePage() {
@@ -1647,40 +1649,512 @@ function clickSearchSubmitNear(input) {
   return false
 }
 
-async function searchExploreByPrompt(prompt) {
-  await ensureExplorePage()
+function dispatchEnterKey(input) {
+  for (const type of ["keydown", "keypress", "keyup"]) {
+    input.dispatchEvent(
+      new KeyboardEvent(type, {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+      }),
+    )
+  }
+}
 
-  const input = findExploreSearchInput()
-  if (!input) {
-    throw new Error("未找到 Explore 搜索框，请确认已登录并在 Explore 页面")
+function parseExploreJobsPayload(data) {
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.jobs)) return data.jobs
+  if (Array.isArray(data?.data)) return data.data
+  if (Array.isArray(data?.results)) return data.results
+  return []
+}
+
+function extractCdnUrlsFromJob(job) {
+  const urls = new Set()
+  const jobId = job?.id || job?.job_id || job?.jobId
+  if (jobId && /^[0-9a-f-]{36}$/i.test(String(jobId))) {
+    urls.add(
+      normalizeImageUrl(`https://cdn.midjourney.com/${String(jobId)}/0_0.webp`),
+    )
   }
 
-  input.focus()
-  setNativeInputValue(input, "")
-  input.dispatchEvent(new Event("input", { bubbles: true }))
+  for (const field of [
+    job?.imageUrl,
+    job?.image_url,
+    job?.url,
+    job?.event?.url,
+  ]) {
+    if (field && MJ_CDN_PATTERN.test(field)) {
+      urls.add(normalizeImageUrl(field))
+    }
+  }
+
+  if (Array.isArray(job?.events)) {
+    for (const ev of job.events) {
+      if (ev?.url && MJ_CDN_PATTERN.test(ev.url)) {
+        urls.add(normalizeImageUrl(ev.url))
+      }
+    }
+  }
+
+  if (urls.size === 0 && job) {
+    const json = JSON.stringify(job)
+    const matches = json.match(
+      /https:\/\/cdn\.midjourney\.com\/[0-9a-f-]+\/\d+_\d+\.webp/gi,
+    )
+    matches?.forEach((url) => urls.add(normalizeImageUrl(url)))
+  }
+
+  return [...urls]
+}
+
+function jobMatchesPrompt(job, prompt) {
+  const text = JSON.stringify(job || {}).toLowerCase()
+  const terms = prompt
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z0-9-]/g, ""))
+    .filter((w) => w.length > 3)
+  if (terms.length < 2) return true
+  const hits = terms.filter((t) => text.includes(t)).length
+  return hits >= Math.min(2, Math.ceil(terms.length * 0.3))
+}
+
+const EXPLORE_API_AMOUNT = 100
+const EXPLORE_API_MAX_PAGES = 100
+
+function getExploreApiTemplates(prompt) {
+  const q = encodeURIComponent(prompt)
+  const qurl = encodeURIComponent("https://www.midjourney.com/explore?tab=top")
+  const amount = EXPLORE_API_AMOUNT
+  const mk =
+    (extra) =>
+    (page) =>
+      `https://www.midjourney.com/api/app/recent-jobs/?amount=${amount}&page=${page}&dedupe=true&jobStatus=completed&${extra}&_qurl=${qurl}`
+
+  return [
+    mk(
+      `jobType=upscale&orderBy=top&service=main&search=${q}&searchType=text`,
+    ),
+    mk(`orderBy=top&service=explore&query=${q}`),
+    mk(`orderBy=hot&service=main&prompt=${q}`),
+    mk(`orderBy=top&service=main&search=${q}`),
+    mk(`orderBy=top&search=${q}`),
+  ]
+}
+
+async function fetchExploreJobsFromApi(prompt, apiUrl) {
+  const response = await fetch(apiUrl, {
+    credentials: "include",
+    headers: { accept: "application/json, text/plain, */*" },
+  })
+  if (!response.ok) return { jobs: [], urls: [] }
+  const data = await response.json()
+  const jobs = parseExploreJobsPayload(data)
+  const urls = new Set()
+  const trustFilter = /[?&](search|query|prompt)=/i.test(apiUrl)
+  for (const job of jobs) {
+    if (!trustFilter && !jobMatchesPrompt(job, prompt)) continue
+    extractCdnUrlsFromJob(job).forEach((url) => urls.add(url))
+  }
+  if (urls.size === 0 && jobs.length > 0 && trustFilter) {
+    for (const job of jobs) {
+      extractCdnUrlsFromJob(job).forEach((url) => urls.add(url))
+    }
+  }
+  return { jobs, urls: [...urls] }
+}
+
+async function searchExploreViaApi(prompt, options = {}) {
+  const maxCollect = options.maxCollect ?? 1000
+  const collected = options.collected ?? new Set()
+  const templates = getExploreApiTemplates(prompt)
+  let activeTemplate = null
+
+  for (let page = 0; page < EXPLORE_API_MAX_PAGES; page++) {
+    if (collected.size >= maxCollect) break
+
+    let jobs = []
+
+    if (activeTemplate !== null) {
+      const apiUrl = templates[activeTemplate](page)
+      try {
+        const result = await fetchExploreJobsFromApi(prompt, apiUrl)
+        jobs = result.jobs
+        for (const url of result.urls) {
+          if (collected.size >= maxCollect) break
+          collected.add(url)
+        }
+      } catch {
+        break
+      }
+    } else {
+      for (let t = 0; t < templates.length; t++) {
+        try {
+          const apiUrl = templates[t](page)
+          const result = await fetchExploreJobsFromApi(prompt, apiUrl)
+          if (result.jobs.length > 0) {
+            activeTemplate = t
+            jobs = result.jobs
+            for (const url of result.urls) {
+              if (collected.size >= maxCollect) break
+              collected.add(url)
+            }
+            break
+          }
+        } catch {
+          /* try next template */
+        }
+      }
+      if (activeTemplate === null) break
+    }
+
+    if (jobs.length === 0) break
+
+    reportBatchStep(
+      `API 第 ${page + 1} 页，已 ${collected.size}/${maxCollect} 张`,
+    )
+
+    if (jobs.length < EXPLORE_API_AMOUNT) break
+  }
+
+  return [...collected]
+}
+
+async function harvestExplorePageUrls(prompt, options = {}) {
+  const maxIterations = options.maxIterations ?? 600
+  const maxCollect = options.maxCollect ?? 5000
+  const collected = options.collected ?? new Set()
+
+  const scroller = findScrollContainer()
+  if (scroller && collected.size < maxCollect) {
+    const prevAbort = autoScrollAbort
+    autoScrollAbort = false
+    await runAutoScrollHarvest(scroller, collected, null, {
+      maxIterations,
+      maxCollect,
+    })
+    autoScrollAbort = prevAbort
+  } else if (collected.size < maxCollect) {
+    harvestAllVisibleImageUrls().forEach((url) => {
+      if (collected.size < maxCollect) collected.add(url)
+    })
+  }
+
+  const terms = prompt
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z0-9-]/g, ""))
+    .filter((w) => w.length > 3)
+  if (terms.length >= 2 && !options.collected) {
+    const filtered = [...collected].filter((url) => {
+      const hay = url.toLowerCase()
+      return terms.some((t) => hay.includes(t))
+    })
+    if (filtered.length >= 2) {
+      collected.clear()
+      filtered.slice(0, maxCollect).forEach((url) => collected.add(url))
+    }
+  }
+  return [...collected]
+}
+
+async function runExplorePageSearch(prompt) {
+  try {
+    const mainWorld = await sendExtensionMessage({
+      type: "main-world-explore-search",
+      prompt,
+    })
+    if (mainWorld?.ok) {
+      await sleep(2200)
+      return true
+    }
+  } catch {
+    /* fallback below */
+  }
+
+  await searchExploreByPrompt(prompt)
+  await sleep(1200)
+  return true
+}
+
+async function collectBatchImageUrls(prompt, maxCollect = 1000) {
+  maxCollect = Math.min(Math.max(Number(maxCollect) || 1000, 50), 5000)
+  const collected = new Set()
+
+  reportBatchStep(`API 分页采集 0/${maxCollect}…`)
+  await searchExploreViaApi(prompt, { maxCollect, collected })
+
+  if (collected.size < maxCollect) {
+    reportBatchStep(`页面滚动补采 ${collected.size}/${maxCollect}…`)
+    await runExplorePageSearch(prompt)
+    await waitForSearchResults()
+    await harvestExplorePageUrls(prompt, {
+      maxIterations: 600,
+      maxCollect,
+      collected,
+    })
+  }
+
+  const urls = [...collected].slice(0, maxCollect)
+  if (urls.length >= maxCollect) {
+    showAutoScrollToast(`已达采集上限 ${maxCollect} 张`)
+  } else if (urls.length > 0) {
+    showAutoScrollToast(`采集完成，共 ${urls.length} 张`)
+  }
+
+  if (urls.length === 0) {
+    throw new Error("未采集到图片，请确认 Explore Search Images 可手动搜索")
+  }
+  return urls
+}
+
+async function withExploreSearchNetworkProbe(run) {
+  let apiHit = false
+  const mark = (url) => {
+    const u = String(url || "")
+    if (!/midjourney\.com/i.test(u)) return
+    if (/(search|explore|feed|prompt|job|rank)/i.test(u)) apiHit = true
+  }
+
+  const origFetch = window.fetch
+  window.fetch = async (...args) => {
+    try {
+      mark(typeof args[0] === "string" ? args[0] : args[0]?.url)
+    } catch {
+      /* ignore */
+    }
+    return origFetch.apply(window, args)
+  }
+
+  const origOpen = XMLHttpRequest.prototype.open
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    try {
+      mark(url)
+    } catch {
+      /* ignore */
+    }
+    return origOpen.call(this, method, url, ...rest)
+  }
+
+  try {
+    return await run(() => apiHit)
+  } finally {
+    window.fetch = origFetch
+    XMLHttpRequest.prototype.open = origOpen
+  }
+}
+
+function exploreResultsMatchPrompt(prompt) {
+  const terms = prompt
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z0-9-]/g, ""))
+    .filter((w) => w.length > 3)
+  if (terms.length < 2) return false
+
+  const need = Math.min(2, Math.ceil(terms.length * 0.35))
+  let matchedCards = 0
+  for (const card of document.querySelectorAll(
+    'a[href*="/jobs/"], div[class*="jobCard"], div[class*="grid"] a',
+  )) {
+    const text = (card.textContent || card.getAttribute("aria-label") || "").toLowerCase()
+    const hits = terms.filter((t) => text.includes(t)).length
+    if (hits >= need) matchedCards++
+  }
+  return matchedCards >= 2
+}
+
+async function typePromptIntoSearchField(field, prompt) {
+  field.focus()
+  field.click()
   await sleep(200)
 
-  setNativeInputValue(input, prompt)
-  input.dispatchEvent(new Event("input", { bubbles: true }))
-  input.dispatchEvent(new Event("change", { bubbles: true }))
-
-  input.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key: "Enter",
-      code: "Enter",
-      bubbles: true,
-    }),
+  if (field.isContentEditable) {
+    field.textContent = ""
+  } else {
+    setNativeInputValue(field, "")
+  }
+  field.dispatchEvent(
+    new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }),
   )
+  await sleep(120)
 
-  if (!clickSearchSubmitNear(input)) {
-    const submitBtn = document.querySelector(
-      'button[type="submit"], button[aria-label*="Search" i]',
-    )
-    submitBtn?.click()
+  try {
+    field.focus()
+    if (typeof field.select === "function") field.select()
+    document.execCommand("insertText", false, prompt)
+  } catch {
+    /* execCommand may fail on some fields */
   }
 
-  await sleep(1800)
-  return true
+  if (field.isContentEditable) {
+    if (!(field.textContent || "").includes(prompt.slice(0, 8))) {
+      field.textContent = prompt
+    }
+  } else if (!(field.value || "").includes(prompt.slice(0, 8))) {
+    await typePromptCharByChar(field, prompt)
+  }
+
+  field.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertFromPaste",
+      data: prompt,
+    }),
+  )
+  field.dispatchEvent(new Event("change", { bubbles: true }))
+}
+
+async function typePromptCharByChar(field, prompt) {
+  setNativeInputValue(field, "")
+  for (const char of prompt) {
+    setNativeInputValue(field, (field.value || "") + char)
+    field.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        data: char,
+        inputType: "insertText",
+      }),
+    )
+    await sleep(10)
+  }
+}
+
+function clickNearbySearchIcon(input) {
+  const roots = [
+    input.closest("form"),
+    input.closest('[class*="search"]'),
+    input.closest("header"),
+    input.parentElement?.parentElement,
+    input.parentElement,
+  ].filter(Boolean)
+
+  for (const root of roots) {
+    for (const btn of root.querySelectorAll("button, [role='button']")) {
+      const label = `${btn.textContent || ""} ${btn.getAttribute("aria-label") || ""}`.toLowerCase()
+      if (label.includes("search images")) {
+        btn.click()
+        return true
+      }
+      if (label.includes("search") && btn !== input) {
+        btn.click()
+        return true
+      }
+    }
+    const svgBtn = root.querySelector("button svg, [role='button'] svg")
+    svgBtn?.closest("button")?.click()
+  }
+  return false
+}
+
+async function submitExploreSearch(input, prompt) {
+  clickExploreSearchImagesTrigger()
+  await sleep(350)
+  input.focus()
+  input.click()
+
+  await typePromptIntoSearchField(input, prompt)
+  await sleep(900)
+
+  dispatchEnterKey(input)
+  await sleep(350)
+  clickNearbySearchIcon(input)
+  clickSearchSubmitNear(input)
+
+  const form = input.closest("form")
+  if (form?.requestSubmit) {
+    try {
+      form.requestSubmit()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function waitForExploreSearchApplied(prompt, beforeUrl, getApiHit, maxWaitMs = 30000) {
+  const baselineUrls = [...harvestAllVisibleImageUrls()].slice(0, 12).sort().join("|")
+  const needle = prompt.trim().toLowerCase()
+  const start = Date.now()
+
+  while (Date.now() - start < maxWaitMs) {
+    if (location.href !== beforeUrl) return true
+    if (getApiHit()) {
+      await sleep(1200)
+      return true
+    }
+    if (exploreResultsMatchPrompt(prompt)) return true
+
+    const urlLower = location.href.toLowerCase()
+    if (
+      needle &&
+      (urlLower.includes(encodeURIComponent(needle.slice(0, 12))) ||
+        /[?&](q|query|search|prompt)=/.test(urlLower))
+    ) {
+      return true
+    }
+
+    const currentUrls = [...harvestAllVisibleImageUrls()].slice(0, 12).sort().join("|")
+    if (currentUrls && baselineUrls && currentUrls !== baselineUrls) {
+      await sleep(800)
+      if (exploreResultsMatchPrompt(prompt) || getApiHit()) return true
+    }
+
+    await sleep(450)
+  }
+
+  return exploreResultsMatchPrompt(prompt)
+}
+
+async function searchExploreByPrompt(prompt) {
+  await ensureExplorePage()
+  await sleep(800)
+
+  let lastError = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      reportBatchStep(
+        attempt === 0
+          ? "打开 Explore Search Images…"
+          : `重试搜索 (${attempt + 1}/3)…`,
+      )
+
+      clickExploreSearchImagesTrigger()
+      await sleep(700)
+
+      const input = await openExploreImageSearchInput()
+      if (!input) {
+        throw new Error(
+          "未找到 Explore「Search Images」搜索框，请确认页面右上角 Search Images 可点击",
+        )
+      }
+
+      showAutoScrollToast(`批量搜索：${prompt.slice(0, 48)}…`)
+      const beforeUrl = location.href
+
+      const applied = await withExploreSearchNetworkProbe(async (getApiHit) => {
+        await submitExploreSearch(input, prompt)
+        return waitForExploreSearchApplied(prompt, beforeUrl, getApiHit)
+      })
+
+      if (!applied) {
+        throw new Error(
+          "Explore 搜索未生效，请手动点击右上角 Search Images 输入提示词试一下",
+        )
+      }
+
+      await sleep(1000)
+      return true
+    } catch (error) {
+      lastError = error
+      await sleep(900)
+    }
+  }
+
+  throw lastError || new Error("Explore 搜索失败")
 }
 
 async function waitForSearchResults(maxWaitMs = 20000) {
@@ -1703,6 +2177,27 @@ async function waitForSearchResults(maxWaitMs = 20000) {
   }
 
   return harvestAllVisibleImageUrls().size
+}
+
+function reportBatchStep(step) {
+  if (!chrome?.runtime?.sendMessage) return
+  chrome.runtime.sendMessage({ type: "batch-step-progress", step }).catch(() => {})
+}
+
+function runBatchPromptTaskWithTimeout(message) {
+  const maxCollect = Math.min(
+    Math.max(Number(message.maxCollect) || 1000, 50),
+    5000,
+  )
+  const timeoutMs = Math.max(600000, maxCollect * 800)
+  return Promise.race([
+    runBatchPromptTask(message),
+    sleep(timeoutMs).then(() => {
+      throw new Error(
+        `单条提示词执行超时（${Math.round(timeoutMs / 60000)} 分钟），已跳过`,
+      )
+    }),
+  ])
 }
 
 async function runBatchPromptTask(message) {
@@ -1735,22 +2230,13 @@ async function runBatchPromptTask(message) {
       skipDownloaded = message.skipDownloaded
     }
 
-    await searchExploreByPrompt(prompt)
-    await waitForSearchResults()
-
-    selectedImageUrls = []
-    const collected = new Set()
-    const scroller = findScrollContainer()
-    if (!scroller) {
-      throw new Error("未找到可滚动区域")
-    }
-
-    const prevAbort = autoScrollAbort
-    autoScrollAbort = false
-    await runAutoScrollHarvest(scroller, collected, null)
-    autoScrollAbort = prevAbort
-
-    selectedImageUrls = [...collected]
+    showAutoScrollToast(`批量任务：${prompt.slice(0, 48)}…`)
+    const maxCollect = Math.min(
+      Math.max(Number(message.maxCollect) || 1000, 50),
+      5000,
+    )
+    const collectedUrls = await collectBatchImageUrls(prompt, maxCollect)
+    selectedImageUrls = [...collectedUrls]
     syncCheckboxesWithSelection()
 
     let downloadStats = {
@@ -1767,8 +2253,8 @@ async function runBatchPromptTask(message) {
 
     return {
       ok: true,
-      selectedCount: collected.size,
-      imageUrls: [...collected],
+      selectedCount: collectedUrls.length,
+      imageUrls: collectedUrls,
       successCount: downloadStats.successCount,
       failCount: downloadStats.failCount,
       skippedCount: downloadStats.skippedCount,
@@ -1819,10 +2305,15 @@ new MutationObserver(() => {
   }
 }).observe(document, { subtree: true, childList: true })
 
-if (chrome?.runtime?.onMessage) {
+if (chrome?.runtime?.onMessage && !globalThis.__bdduckMjBatchListener) {
+  globalThis.__bdduckMjBatchListener = true
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "content-ping") {
+      sendResponse({ ok: true })
+      return false
+    }
     if (message?.type === "batch-run-prompt") {
-      runBatchPromptTask(message)
+      runBatchPromptTaskWithTimeout(message)
         .then((result) => sendResponse(result))
         .catch((error) =>
           sendResponse({ ok: false, error: error.message || String(error) }),
