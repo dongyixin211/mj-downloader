@@ -1,0 +1,22 @@
+/** h10 */
+.dashboard-welcome-title {
+    display: none;
+}
+.big-checklist {
+    display: none !important;
+}
+/** h10右侧的图标 */
+#common-menu header:last-child > div:last-child > div:last-child {
+    display: none !important;
+}
+.sc-dbXCOC.fCfyBJ,
+.sc-jsKGbQ.liiNSR,
+.sc-bRcdvP.hXFDse,
+.sc-jsSDDP.jkncEC {
+    display: none;
+}
+/** h10提示绑定卖家账号 */
+#banner-connect-token {
+    display:none;
+}
+/** freedomticket */

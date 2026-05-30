@@ -1,0 +1,247 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  background: linear-gradient(160deg, #0f172a 0%, #1e293b 100%);
+  color: #e2e8f0;
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+}
+
+.subtitle {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+  backdrop-filter: blur(8px);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.field span {
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+textarea,
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+  background: #0b1220;
+  color: #f8fafc;
+  padding: 12px 14px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+}
+
+.field.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.field.inline input[type="number"] {
+  width: 72px;
+}
+
+.field.inline.wide {
+  grid-column: 1 / -1;
+}
+
+.hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.82rem;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.preview {
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.preview-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.88rem;
+  color: #94a3b8;
+}
+
+#preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#preview-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+#preview-list li.duplicate {
+  color: #fbbf24;
+}
+
+#preview-list li.new {
+  color: #86efac;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #0f172a;
+}
+
+.btn.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
+  color: #fff;
+}
+
+.btn.secondary {
+  background: rgba(148, 163, 184, 0.15);
+  color: #e2e8f0;
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
+.progress-bar {
+  height: 8px;
+  background: rgba(148, 163, 184, 0.15);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+#progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  transition: width 0.3s ease;
+}
+
+.current-prompts {
+  font-size: 0.85rem;
+  color: #93c5fd;
+  margin-bottom: 10px;
+  min-height: 1.2em;
+}
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.log-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.log-list li.fail {
+  color: #fca5a5;
+}
+
+.log-list li.ok {
+  color: #bbf7d0;
+}

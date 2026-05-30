@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>批量提示词 - 爆单MJ</title>
+    <link rel="stylesheet" href="batch.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="header">
+        <div>
+          <h1>批量提示词任务</h1>
+          <p class="subtitle">
+            每行一条提示词。默认逐个执行：查询完成并关闭页面后再下载，避免多页互相干扰
+          </p>
+        </div>
+        <button id="open-mj-btn" type="button" class="btn secondary">
+          打开 Midjourney
+        </button>
+      </header>
+
+      <section class="card">
+        <label class="field">
+          <span>提示词列表（一行一条）</span>
+          <textarea
+            id="prompts-input"
+            rows="14"
+            placeholder="例如：&#10;isometric city at sunset --ar 16:9&#10;cute cat portrait --v 7&#10;..."
+          ></textarea>
+        </label>
+
+        <div class="options">
+          <label class="check">
+            <input type="checkbox" id="skip-queried" checked />
+            <span>跳过已查询过的提示词</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="auto-download" checked />
+            <span>自动下载选中图片</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="skip-downloaded" checked />
+            <span>跳过已下载过的图片</span>
+          </label>
+          <label class="field inline">
+            <span>并行查询数</span>
+            <input type="number" id="parallel-count" min="1" max="3" value="1" />
+          </label>
+          <p class="hint">
+            建议保持 1（逐个执行最稳定）。设为 2–3 时仅并行查询，下载仍逐个进行。
+          </p>
+          <label class="field inline wide">
+            <span>下载子目录（可选）</span>
+            <input
+              type="text"
+              id="download-subdir"
+              placeholder="例如 batch-2025-05-27"
+            />
+          </label>
+        </div>
+
+        <div class="preview" id="preview-panel">
+          <div class="preview-head">
+            <strong>解析预览</strong>
+            <span id="preview-stats">0 条</span>
+          </div>
+          <ul id="preview-list"></ul>
+        </div>
+
+        <div class="actions">
+          <button id="start-btn" type="button" class="btn primary">开始批量任务</button>
+          <button id="stop-btn" type="button" class="btn danger" disabled>停止任务</button>
+          <button id="clear-history-btn" type="button" class="btn secondary">
+            清空查询记录 (<span id="history-count">0</span>)
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="progress-head">
+          <strong>任务进度</strong>
+          <span id="progress-text">空闲</span>
+        </div>
+        <div class="progress-bar">
+          <div id="progress-fill"></div>
+        </div>
+        <div id="current-prompts" class="current-prompts"></div>
+        <ul id="log-list" class="log-list"></ul>
+      </section>
+    </main>
+    <script src="batch.js"></script>
+  </body>
+</html>
