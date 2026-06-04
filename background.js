@@ -376,32 +376,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error.message }))
     return true
   }
-  if (message?.type === "export-history-backup") {
-    ;(async () => {
-      try {
-        const backup = await buildHistoryBackupPayload()
-        const dl = backup.downloadHistory?.length || 0
-        const pr = backup.promptHistory?.length || 0
-        if (message.downloadToFile) {
-          await downloadHistoryBackupFile(backup)
-        }
-        safeRespond({
-          ok: true,
-          backup,
-          counts: { downloadHistory: dl, promptHistory: pr },
-        })
-      } catch (error) {
-        safeRespond({ ok: false, error: error.message })
-      }
-    })()
-    return true
-  }
-  if (message?.type === "import-bundled-history-backup") {
-    importBundledHistoryBackupIfNeeded()
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }))
-    return true
-  }
   if (message?.type === "get-download-settings") {
     getDownloadSettings()
       .then((settings) => sendResponse({ ok: true, settings }))
