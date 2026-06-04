@@ -501,6 +501,7 @@ function initializeCheckboxSystem() {
   createDownloadSelectedButton()
   createSetDownloadFolderButton()
   createDownloadNamingSettingsButton()
+  createExportHistoryBackupButton()
   createSkipDownloadedToggle()
   createDownloadHistoryButton()
   createOpenBatchPageButton()
@@ -1016,6 +1017,43 @@ function createSkipDownloadedToggle() {
   })
   document.body.appendChild(button)
   updateSkipDownloadedButton()
+}
+
+async function exportHistoryBackupToDownloads() {
+  const result = await sendExtensionMessage({
+    type: "export-history-backup",
+    downloadToFile: true,
+  })
+  const dl = result.counts?.downloadHistory ?? 0
+  const pr = result.counts?.promptHistory ?? 0
+  alert(
+    `已导出 mj-history-backup.json 到浏览器下载目录。\n\n` +
+      `下载记录 ${dl} 条，查询记录 ${pr} 条。\n\n` +
+      `提交 Git 前请将该文件复制到项目目录：\n` +
+      `data/mj-history-backup.json\n\n` +
+      `也可运行：scripts\\copy-backup-from-downloads.ps1`,
+  )
+}
+
+function createExportHistoryBackupButton() {
+  if (document.getElementById("export-history-backup-btn")) return
+
+  const button = document.createElement("button")
+  button.id = "export-history-backup-btn"
+  button.innerText = "导出历史备份"
+  button.title = "导出 IndexedDB 到 JSON，用于提交到 Git data/ 目录"
+  button.style.cssText = `position:fixed;bottom:270px;left:20px;z-index:9999;padding:10px 18px;background:linear-gradient(135deg,#14b8a6 0%,#2dd4bf 100%);color:#0f172a;border:none;border-radius:20px;cursor:pointer;box-shadow:0 4px 15px rgba(20,184,166,0.4);font-weight:600;font-size:12px;letter-spacing:0.3px;transition:all 0.3s ease;backdrop-filter:blur(10px);`
+  button.addEventListener("click", async () => {
+    button.disabled = true
+    try {
+      await exportHistoryBackupToDownloads()
+    } catch (error) {
+      alert("导出失败: " + (error.message || error))
+    } finally {
+      button.disabled = false
+    }
+  })
+  document.body.appendChild(button)
 }
 
 function createDownloadHistoryButton() {

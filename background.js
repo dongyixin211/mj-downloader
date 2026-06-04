@@ -3,6 +3,7 @@ importScripts(
   "downloadHelpers.js",
   "downloadHistory.js",
   "promptHistory.js",
+  "historyBackup.js",
   "batchOrchestrator.js",
 )
 
@@ -287,16 +288,24 @@ function scheduleExpiryChecks() {
   chrome.alarms.create(EXPIRY_CHECK_ALARM, { periodInMinutes: 1 })
 }
 
+function runHistoryBackupImport() {
+  importBundledHistoryBackupIfNeeded().catch(() => {})
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   scheduleExpiryChecks()
   enforceExpiryIfNeeded()
   reconcileStaleBatchProgress().catch(() => {})
+  runHistoryBackupImport()
 })
 
 chrome.runtime.onStartup.addListener(() => {
   enforceExpiryIfNeeded()
   reconcileStaleBatchProgress().catch(() => {})
+  runHistoryBackupImport()
 })
+
+runHistoryBackupImport()
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === EXPIRY_CHECK_ALARM) {
@@ -364,6 +373,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "get-download-history-count") {
     getDownloadHistoryCount()
       .then((count) => sendResponse({ ok: true, count }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+  if (message?.type === "export-history-backup") {
+    ;(async () => {
+      try {
+        const backup = await buildHistoryBackupPayload()
+        const dl = backup.downloadHistory?.length || 0
+        const pr = backup.promptHistory?.length || 0
+        if (message.downloadToFile) {
+          await downloadHistoryBackupFile(backup)
+        }
+        safeRespond({
+          ok: true,
+          backup,
+          counts: { downloadHistory: dl, promptHistory: pr },
+        })
+      } catch (error) {
+        safeRespond({ ok: false, error: error.message })
+      }
+    })()
+    return true
+  }
+  if (message?.type === "import-bundled-history-backup") {
+    importBundledHistoryBackupIfNeeded()
+      .then((result) => sendResponse({ ok: true, result }))
       .catch((error) => sendResponse({ ok: false, error: error.message }))
     return true
   }

@@ -10,6 +10,7 @@ const previewStats = document.getElementById("preview-stats")
 const startBtn = document.getElementById("start-btn")
 const stopBtn = document.getElementById("stop-btn")
 const historyCountEl = document.getElementById("history-count")
+const exportHistoryBackupBtn = document.getElementById("export-history-backup-btn")
 const progressText = document.getElementById("progress-text")
 const progressFill = document.getElementById("progress-fill")
 const currentPromptsEl = document.getElementById("current-prompts")
@@ -218,6 +219,25 @@ startBtn.addEventListener("click", async () => {
   } catch (error) {
     alert(error.message || String(error))
     startBtn.disabled = false
+  }
+})
+
+exportHistoryBackupBtn.addEventListener("click", async () => {
+  exportHistoryBackupBtn.disabled = true
+  try {
+    const result = await sendMessage({
+      type: "export-history-backup",
+      downloadToFile: true,
+    })
+    const dl = result.counts?.downloadHistory ?? 0
+    const pr = result.counts?.promptHistory ?? 0
+    alert(
+      `已导出 mj-history-backup.json。\n\n下载记录 ${dl} 条，查询记录 ${pr} 条。\n\n请复制到项目 data/mj-history-backup.json 后提交 Git，或运行 scripts\\copy-backup-from-downloads.ps1`,
+    )
+  } catch (error) {
+    alert(error.message || String(error))
+  } finally {
+    exportHistoryBackupBtn.disabled = false
   }
 })
 
