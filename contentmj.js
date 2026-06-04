@@ -33,9 +33,9 @@ function showAutoScrollToast(message) {
   }, 6000)
 }
 
-// 批量下载并发数（过多易触发扩展/下载队列失败）
+// 批量下载并发数（过多易触发扩展/下载队列失败；重名询问时必须为 1）
 const DOWNLOAD_CONCURRENCY = 2
-const DOWNLOAD_RETRY_TIMES = 2
+const DOWNLOAD_RETRY_TIMES = 5
 
 // 下载子目录（相对于浏览器下载目录），用户可通过按钮设置
 let downloadSubDir = ""
@@ -44,6 +44,10 @@ const DOWNLOAD_SUBDIR_STORAGE_KEY = "bdduck-download-subdir"
 // 跳过已下载（IndexedDB 记录，默认开启）
 const SKIP_DOWNLOADED_KEY = "bdduck-skip-downloaded"
 let skipDownloaded = true
+
+// 下载命名 / 重名处理（与 background chrome.storage 同步）
+let downloadNamingMode = DOWNLOAD_NAMING_SEQUENTIAL
+let downloadConflictAction = DOWNLOAD_CONFLICT_PROMPT
 let markDownloadedTimer = null
 const downloadedUrlSet = new Set()
 
@@ -291,24 +295,50 @@ function addCheckboxesToCards() {
   scheduleMarkDownloadedIndicators()
 }
 
-function sendExtensionMessage(payload) {
+function isRetriableExtensionError(message) {
+  const msg = String(message || "")
+  return (
+    msg.includes("message port closed") ||
+    msg.includes("Receiving end does not exist") ||
+    msg.includes("Could not establish connection") ||
+    msg.includes("Extension context invalidated") ||
+    msg.includes("The message port closed")
+  )
+}
+
+function sendExtensionMessage(payload, retries = 5) {
   return new Promise((resolve, reject) => {
-    if (!chrome?.runtime?.sendMessage) {
-      reject(new Error("Extension unavailable"))
-      return
+    const attempt = (left) => {
+      if (!chrome?.runtime?.sendMessage) {
+        reject(new Error("Extension unavailable"))
+        return
+      }
+      chrome.runtime.sendMessage(payload, (response) => {
+        if (chrome.runtime.lastError) {
+          const msg =
+            chrome.runtime.lastError.message || String(chrome.runtime.lastError)
+          if (left > 0 && isRetriableExtensionError(msg)) {
+            setTimeout(() => attempt(left - 1), 400)
+            return
+          }
+          reject(new Error(msg))
+          return
+        }
+        if (!response?.ok) {
+          reject(new Error(response?.error || "Request failed"))
+          return
+        }
+        resolve(response)
+      })
     }
-    chrome.runtime.sendMessage(payload, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError)
-        return
-      }
-      if (!response?.ok) {
-        reject(new Error(response?.error || "Request failed"))
-        return
-      }
-      resolve(response)
-    })
+    attempt(retries)
   })
+}
+
+function getEffectiveDownloadConcurrency() {
+  return downloadConflictAction === DOWNLOAD_CONFLICT_PROMPT
+    ? 1
+    : DOWNLOAD_CONCURRENCY
 }
 
 async function filterUrlsForDownload(urls) {
@@ -462,6 +492,7 @@ function initializeCheckboxSystem() {
 
   loadDownloadSubDir()
   loadSkipDownloaded()
+  loadDownloadNamingSettings()
   bindScrollListeners()
   createSelectCurrentPageButton()
   createAutoScrollSelectAllButton()
@@ -469,6 +500,7 @@ function initializeCheckboxSystem() {
   createClearAllSelectedButton()
   createDownloadSelectedButton()
   createSetDownloadFolderButton()
+  createDownloadNamingSettingsButton()
   createSkipDownloadedToggle()
   createDownloadHistoryButton()
   createOpenBatchPageButton()
@@ -485,6 +517,18 @@ function initializeCheckboxSystem() {
     }
   })
 }
+async function loadDownloadNamingSettings() {
+  try {
+    const { settings } = await sendExtensionMessage({
+      type: "get-download-settings",
+    })
+    if (settings?.namingMode) downloadNamingMode = settings.namingMode
+    if (settings?.conflictAction) downloadConflictAction = settings.conflictAction
+  } catch {
+    /* 使用默认值 */
+  }
+}
+
 async function requestBackgroundDownload(url, filename, sourceUrl) {
   let lastError
   for (let attempt = 0; attempt < DOWNLOAD_RETRY_TIMES; attempt++) {
@@ -494,12 +538,14 @@ async function requestBackgroundDownload(url, filename, sourceUrl) {
         url,
         filename,
         sourceUrl: sourceUrl || url,
+        namingMode: downloadNamingMode,
+        conflictAction: downloadConflictAction,
       })
       return
     } catch (error) {
       lastError = error
       if (attempt < DOWNLOAD_RETRY_TIMES - 1) {
-        await sleep(400)
+        await sleep(600)
       }
     }
   }
@@ -525,19 +571,28 @@ async function downloadViaPageFetch(imageUrl, filename) {
   await requestBackgroundDownload(dataUrl, filename, imageUrl)
 }
 
+function buildDownloadFilenameForImage(webpUrl, imageUrl, ext) {
+  if (downloadNamingMode === DOWNLOAD_NAMING_SEQUENTIAL) {
+    return buildSequentialPlaceholderPath(downloadSubDir, ext)
+  }
+  const filename = deriveDownloadFilename(webpUrl, imageUrl)
+  return downloadSubDir ? `${downloadSubDir}/${filename}` : filename
+}
+
 async function downloadSingleImage(imageUrl) {
   const webpUrl = ensureWebpUrl(imageUrl)
-  const filename = deriveDownloadFilename(webpUrl, imageUrl)
-  const finalFilename = downloadSubDir
-    ? `${downloadSubDir}/${filename}`
-    : filename
-
   const candidates = getDownloadUrlCandidates(imageUrl)
   let lastError
 
   for (const url of candidates) {
     const ext = /\.webp$/i.test(url) ? ".webp" : ".png"
-    const nameForUrl = finalFilename.replace(/\.(png|webp|jpe?g)$/i, ext)
+    const nameForUrl =
+      downloadNamingMode === DOWNLOAD_NAMING_SEQUENTIAL
+        ? buildDownloadFilenameForImage(webpUrl, imageUrl, ext)
+        : buildDownloadFilenameForImage(webpUrl, imageUrl, ext).replace(
+            /\.(png|webp|jpe?g)$/i,
+            ext,
+          )
     try {
       await requestBackgroundDownload(url, nameForUrl, imageUrl)
       return
@@ -547,7 +602,10 @@ async function downloadSingleImage(imageUrl) {
   }
 
   try {
-    await downloadViaPageFetch(imageUrl, finalFilename)
+    await downloadViaPageFetch(
+      imageUrl,
+      buildDownloadFilenameForImage(webpUrl, imageUrl, ".webp"),
+    )
   } catch (fetchError) {
     throw lastError || fetchError
   }
@@ -865,6 +923,86 @@ function createSetDownloadFolderButton() {
   document.body.appendChild(button)
 }
 
+function namingModeLabel(mode) {
+  return mode === DOWNLOAD_NAMING_SEQUENTIAL
+    ? "日期+六位序号"
+    : "默认(任务ID)"
+}
+
+function conflictActionLabel(action) {
+  if (action === DOWNLOAD_CONFLICT_PROMPT) return "重名询问"
+  if (action === DOWNLOAD_CONFLICT_OVERWRITE) return "直接覆盖"
+  return "自动重命名"
+}
+
+function updateDownloadNamingSettingsButton() {
+  const button = document.getElementById("download-naming-settings")
+  if (!button) return
+  button.innerText = `命名:${namingModeLabel(downloadNamingMode)} · ${conflictActionLabel(downloadConflictAction)}`
+}
+
+function createDownloadNamingSettingsButton() {
+  if (document.getElementById("download-naming-settings")) return
+
+  const button = document.createElement("button")
+  button.id = "download-naming-settings"
+  button.style.cssText = `position:fixed;bottom:220px;left:20px;z-index:9999;max-width:min(92vw,320px);padding:10px 16px;background:linear-gradient(135deg,#6366f1 0%,#818cf8 100%);color:white;border:none;border-radius:20px;cursor:pointer;box-shadow:0 4px 15px rgba(99,102,241,0.4);font-weight:600;font-size:12px;line-height:1.35;letter-spacing:0.3px;transition:all 0.3s ease;backdrop-filter:blur(10px);`
+  button.addEventListener("click", async () => {
+    await loadDownloadNamingSettings()
+    const today = formatDateYmd()
+    const sample = `${today}_000001.webp`
+    const choice = prompt(
+      `下载命名与重名处理\n\n` +
+        `【命名】输入 1 或 2：\n` +
+        `1 = 日期+六位序号（例 ${sample}）\n` +
+        `2 = 默认（任务ID+指纹）\n\n` +
+        `【重名】输入 A / B / C：\n` +
+        `A = 询问是否覆盖（推荐）\n` +
+        `B = 自动重命名 (1)(2)…\n` +
+        `C = 直接覆盖旧文件\n\n` +
+        `输入 R = 重置今日序号（下一张从 ${today}_000001 开始）\n` +
+        `可组合输入，如 1A；留空取消`,
+      `${downloadNamingMode === DOWNLOAD_NAMING_SEQUENTIAL ? "1" : "2"}${downloadConflictAction === DOWNLOAD_CONFLICT_PROMPT ? "A" : downloadConflictAction === DOWNLOAD_CONFLICT_UNIQUIFY ? "B" : "C"}`,
+    )
+    if (choice === null) return
+
+    const normalized = choice.trim().toUpperCase()
+    if (!normalized) return
+
+    if (normalized.includes("R")) {
+      await sendExtensionMessage({ type: "reset-download-sequence" })
+    }
+
+    const patch = {}
+    if (normalized.includes("1")) patch.namingMode = DOWNLOAD_NAMING_SEQUENTIAL
+    if (normalized.includes("2")) patch.namingMode = DOWNLOAD_NAMING_DEFAULT
+    if (normalized.includes("A")) patch.conflictAction = DOWNLOAD_CONFLICT_PROMPT
+    if (normalized.includes("B")) patch.conflictAction = DOWNLOAD_CONFLICT_UNIQUIFY
+    if (normalized.includes("C")) patch.conflictAction = DOWNLOAD_CONFLICT_OVERWRITE
+
+    if (Object.keys(patch).length) {
+      const { settings } = await sendExtensionMessage({
+        type: "set-download-settings",
+        ...patch,
+      })
+      if (settings?.namingMode) downloadNamingMode = settings.namingMode
+      if (settings?.conflictAction) {
+        downloadConflictAction = settings.conflictAction
+      }
+    }
+
+    updateDownloadNamingSettingsButton()
+    alert(
+      `已保存：\n` +
+        `• 命名：${namingModeLabel(downloadNamingMode)}\n` +
+        `• 重名：${conflictActionLabel(downloadConflictAction)}` +
+        (normalized.includes("R") ? `\n• 今日序号已重置` : ""),
+    )
+  })
+  document.body.appendChild(button)
+  updateDownloadNamingSettingsButton()
+}
+
 function createSkipDownloadedToggle() {
   if (document.getElementById("toggle-skip-downloaded")) return
 
@@ -892,19 +1030,11 @@ function createDownloadHistoryButton() {
       const { count } = await sendExtensionMessage({
         type: "get-download-history-count",
       })
-      const shouldClear = confirm(
-        `已记录 ${count} 张已下载图片（扩展本地 IndexedDB，可长期保存大量记录）。\n\n• 点「确定」→ 清空全部记录（之后可重新下载）\n• 点「取消」→ 仅查看，不做改动`,
+      alert(
+        `已记录 ${count} 张已下载图片。\n\n数据保存在扩展本地 IndexedDB，仅追加、不可删除。`,
       )
-      if (!shouldClear) return
-      await sendExtensionMessage({ type: "clear-download-history" })
-      downloadedUrlSet.clear()
-      document
-        .querySelectorAll(".image-select-checkbox[data-already-downloaded]")
-        .forEach((cb) => applyDownloadedIndicator(cb, false))
-      refreshDownloadHistoryButtonLabel()
-      alert("下载记录已清空")
     } catch (error) {
-      alert("操作失败: " + (error.message || error))
+      alert("读取失败: " + (error.message || error))
     }
   })
   document.body.appendChild(button)
@@ -965,7 +1095,7 @@ async function downloadImagesWithConcurrency(urls, onProgress) {
     }
   }
 
-  const workerCount = Math.min(DOWNLOAD_CONCURRENCY, urls.length)
+  const workerCount = Math.min(getEffectiveDownloadConcurrency(), urls.length)
   await Promise.all(Array.from({ length: workerCount }, () => worker()))
   return { successCount, failCount }
 }

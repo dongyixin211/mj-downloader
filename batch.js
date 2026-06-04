@@ -9,7 +9,6 @@ const previewList = document.getElementById("preview-list")
 const previewStats = document.getElementById("preview-stats")
 const startBtn = document.getElementById("start-btn")
 const stopBtn = document.getElementById("stop-btn")
-const clearHistoryBtn = document.getElementById("clear-history-btn")
 const historyCountEl = document.getElementById("history-count")
 const progressText = document.getElementById("progress-text")
 const progressFill = document.getElementById("progress-fill")
@@ -225,23 +224,6 @@ startBtn.addEventListener("click", async () => {
 stopBtn.addEventListener("click", async () => {
   try {
     await sendMessage({ type: "stop-batch-job" })
-  } catch (error) {
-    alert(error.message || String(error))
-  }
-})
-
-clearHistoryBtn.addEventListener("click", async () => {
-  if (
-    !confirm(
-      "确定清空全部提示词查询记录吗？清空后相同提示词会再次被批量任务执行。",
-    )
-  ) {
-    return
-  }
-  try {
-    await sendMessage({ type: "clear-prompt-history" })
-    await refreshHistoryCount()
-    await refreshPreview()
   } catch (error) {
     alert(error.message || String(error))
   }

@@ -7,15 +7,21 @@ const MJ_EXPLORE_URL = "https://www.midjourney.com/explore?tab=top"
 const BATCH_PROGRESS_KEY = "batchJobProgress"
 const BATCH_ABORT_KEY = "batchJobAbort"
 const BATCH_DOWNLOAD_CONCURRENCY = 2
+const BATCH_KEEPALIVE_ALARM = "bdduck-batch-keepalive"
 
 let batchRunnerPromise = null
 let keepAliveTimer = null
 
+function pingServiceWorker() {
+  chrome.runtime.getPlatformInfo(() => {})
+  chrome.storage.session.get(BATCH_PROGRESS_KEY, () => {})
+}
+
 function startServiceWorkerKeepAlive() {
   if (keepAliveTimer) return
-  keepAliveTimer = setInterval(() => {
-    chrome.runtime.getPlatformInfo(() => {})
-  }, 20000)
+  keepAliveTimer = setInterval(pingServiceWorker, 4000)
+  pingServiceWorker()
+  chrome.alarms.create(BATCH_KEEPALIVE_ALARM, { periodInMinutes: 1 })
 }
 
 function stopServiceWorkerKeepAlive() {
@@ -23,6 +29,34 @@ function stopServiceWorkerKeepAlive() {
     clearInterval(keepAliveTimer)
     keepAliveTimer = null
   }
+  chrome.alarms.clear(BATCH_KEEPALIVE_ALARM)
+}
+
+async function getBatchDownloadConcurrency() {
+  const settings = await getDownloadSettings()
+  return settings.conflictAction === DOWNLOAD_CONFLICT_PROMPT
+    ? 1
+    : BATCH_DOWNLOAD_CONCURRENCY
+}
+
+/** 扩展后台被系统回收后，避免批量页一直显示“进行中” */
+async function reconcileStaleBatchProgress() {
+  const progress = await getBatchProgress()
+  if (!progress.running || batchRunnerPromise) return
+  const logs = progress.logs || []
+  logs.unshift({
+    time: Date.now(),
+    prompt: "(系统)",
+    ok: false,
+    error:
+      "扩展后台已休眠，任务中断。请在 chrome://extensions 重新加载扩展后重新开始。",
+  })
+  await updateBatchProgress({
+    running: false,
+    current: [],
+    logs: logs.slice(0, 100),
+    finishedAt: Date.now(),
+  })
 }
 
 function sleep(ms) {
@@ -291,19 +325,30 @@ async function queryPromptInTab(prompt, options) {
 
 /** 阶段2：后台下载（标签页已关闭） */
 async function downloadImageUrlInBackground(imageUrl, pathPrefix) {
+  const settings = await getDownloadSettings()
   const webpUrl = ensureWebpUrl(imageUrl)
-  const filename = deriveDownloadFilename(webpUrl, imageUrl)
-  const finalFilename = pathPrefix
-    ? `${pathPrefix}/${filename}`
-    : filename
   const candidates = getDownloadUrlCandidates(imageUrl)
   let lastError = null
 
   for (const url of candidates) {
     const ext = /\.webp$/i.test(url) ? ".webp" : ".png"
-    const nameForUrl = finalFilename.replace(/\.(png|webp|jpe?g)$/i, ext)
+    const finalFilename =
+      settings.namingMode === DOWNLOAD_NAMING_SEQUENTIAL
+        ? buildSequentialPlaceholderPath(pathPrefix || "", ext)
+        : pathPrefix
+          ? `${pathPrefix}/${deriveDownloadFilename(webpUrl, imageUrl)}`
+          : deriveDownloadFilename(webpUrl, imageUrl)
+    const nameForUrl =
+      settings.namingMode === DOWNLOAD_NAMING_SEQUENTIAL
+        ? finalFilename
+        : finalFilename.replace(/\.(png|webp|jpe?g)$/i, ext)
     try {
-      await downloadImage(url, nameForUrl, imageUrl)
+      await downloadImage(url, nameForUrl, imageUrl, settings)
+      try {
+        await markImageDownloaded(imageUrl)
+      } catch (error) {
+        console.error("记录下载历史失败:", error)
+      }
       return
     } catch (error) {
       lastError = error
@@ -354,7 +399,8 @@ async function downloadUrlsForPrompt(imageUrls, options) {
     }
   }
 
-  const workers = Math.min(BATCH_DOWNLOAD_CONCURRENCY, urlsToDownload.length)
+  const concurrency = await getBatchDownloadConcurrency()
+  const workers = Math.min(concurrency, urlsToDownload.length)
   await Promise.all(Array.from({ length: workers }, () => worker()))
 
   return { successCount, failCount, skippedCount }
@@ -395,6 +441,7 @@ async function runBatchJob(config) {
     throw new Error("已有批量任务在运行")
   }
 
+  await reconcileStaleBatchProgress()
   await clearBatchAbort()
 
   let prompts = (config.prompts || [])
@@ -589,6 +636,8 @@ async function runBatchJob(config) {
 async function startBatchJob(config) {
   return runBatchJob(config)
 }
+
+reconcileStaleBatchProgress().catch(() => {})
 
 async function getBatchProgress() {
   const data = await chrome.storage.session.get(BATCH_PROGRESS_KEY)

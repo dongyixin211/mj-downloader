@@ -185,9 +185,53 @@ function releaseFilename(filename) {
   usedDownloadFilenames.delete(normalizeFilenameKey(filename))
 }
 
-async function resolveUniqueFilename(requestedFilename, sourceUrl) {
+async function getDownloadSettings(overrides = {}) {
+  const stored = await chrome.storage.local.get([
+    DOWNLOAD_NAMING_MODE_KEY,
+    DOWNLOAD_CONFLICT_ACTION_KEY,
+  ])
+  return {
+    namingMode:
+      overrides.namingMode ||
+      stored[DOWNLOAD_NAMING_MODE_KEY] ||
+      DOWNLOAD_NAMING_SEQUENTIAL,
+    conflictAction:
+      overrides.conflictAction ||
+      stored[DOWNLOAD_CONFLICT_ACTION_KEY] ||
+      DOWNLOAD_CONFLICT_PROMPT,
+  }
+}
+
+async function allocateSequentialFilenameInStorage(dir, ext) {
+  const today = formatDateYmd()
+  const stored = await chrome.storage.local.get([
+    DOWNLOAD_SEQ_DATE_KEY,
+    DOWNLOAD_SEQ_COUNTER_KEY,
+  ])
+  let counter = Number(stored[DOWNLOAD_SEQ_COUNTER_KEY]) || 0
+  if (stored[DOWNLOAD_SEQ_DATE_KEY] !== today) {
+    counter = 0
+  }
+  counter += 1
+  await chrome.storage.local.set({
+    [DOWNLOAD_SEQ_DATE_KEY]: today,
+    [DOWNLOAD_SEQ_COUNTER_KEY]: counter,
+  })
+  const base = buildSequentialBasename(counter, today, ext)
+  return dir ? `${dir}/${base}` : base
+}
+
+async function resolveDownloadFilename(requestedFilename, sourceUrl, options) {
   let resolved
-  resolveFilenameChain = resolveFilenameChain.then(() => {
+  resolveFilenameChain = resolveFilenameChain.then(async () => {
+    if (options.namingMode === DOWNLOAD_NAMING_SEQUENTIAL) {
+      const { dir, ext } = splitFilenameParts(requestedFilename)
+      resolved = await allocateSequentialFilenameInStorage(
+        dir,
+        ext || ".webp",
+      )
+      return
+    }
     const withFingerprint = ensureUniqueDownloadFilename(
       requestedFilename,
       sourceUrl,
@@ -198,18 +242,29 @@ async function resolveUniqueFilename(requestedFilename, sourceUrl) {
   return resolved
 }
 
-async function downloadImage(url, filename, sourceUrl) {
+async function downloadImage(url, filename, sourceUrl, downloadOptions = {}) {
   if (!url) {
     throw new Error("Download URL is required")
   }
-  const uniqueFilename = await resolveUniqueFilename(filename, sourceUrl)
+  const options = await getDownloadSettings(downloadOptions)
+  const uniqueFilename = await resolveDownloadFilename(
+    filename,
+    sourceUrl,
+    options,
+  )
+  const conflictAction =
+    options.conflictAction === DOWNLOAD_CONFLICT_OVERWRITE
+      ? "overwrite"
+      : options.conflictAction === DOWNLOAD_CONFLICT_UNIQUIFY
+        ? "uniquify"
+        : "prompt"
   return new Promise((resolve, reject) => {
     chrome.downloads.download(
       {
         url,
         filename: uniqueFilename,
         saveAs: false,
-        conflictAction: "uniquify",
+        conflictAction,
       },
       (downloadId) => {
         if (chrome.runtime.lastError) {
@@ -235,15 +290,20 @@ function scheduleExpiryChecks() {
 chrome.runtime.onInstalled.addListener(() => {
   scheduleExpiryChecks()
   enforceExpiryIfNeeded()
+  reconcileStaleBatchProgress().catch(() => {})
 })
 
 chrome.runtime.onStartup.addListener(() => {
   enforceExpiryIfNeeded()
+  reconcileStaleBatchProgress().catch(() => {})
 })
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === EXPIRY_CHECK_ALARM) {
     enforceExpiryIfNeeded()
+  }
+  if (alarm.name === BATCH_KEEPALIVE_ALARM) {
+    chrome.runtime.getPlatformInfo(() => {})
   }
 })
 
@@ -280,10 +340,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
   if (message?.type === "download-image") {
-    downloadImage(message.url, message.filename, message.sourceUrl)
+    downloadImage(message.url, message.filename, message.sourceUrl, {
+      namingMode: message.namingMode,
+      conflictAction: message.conflictAction,
+    })
       .then(async () => {
         try {
-          await markImageDownloaded(message.url)
+          await markImageDownloaded(message.sourceUrl || message.url)
         } catch (error) {
           console.error("记录下载历史失败:", error)
         }
@@ -304,8 +367,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error.message }))
     return true
   }
-  if (message?.type === "clear-download-history") {
-    clearDownloadHistory()
+  if (message?.type === "get-download-settings") {
+    getDownloadSettings()
+      .then((settings) => sendResponse({ ok: true, settings }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+  if (message?.type === "set-download-settings") {
+    const patch = {}
+    if (message.namingMode) patch[DOWNLOAD_NAMING_MODE_KEY] = message.namingMode
+    if (message.conflictAction) {
+      patch[DOWNLOAD_CONFLICT_ACTION_KEY] = message.conflictAction
+    }
+    chrome.storage.local
+      .set(patch)
+      .then(() => getDownloadSettings())
+      .then((settings) => sendResponse({ ok: true, settings }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+  if (message?.type === "reset-download-sequence") {
+    chrome.storage.local
+      .remove([DOWNLOAD_SEQ_DATE_KEY, DOWNLOAD_SEQ_COUNTER_KEY])
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: error.message }))
     return true
@@ -319,12 +402,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "get-prompt-history-count") {
     getPromptHistoryCount()
       .then((count) => sendResponse({ ok: true, count }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }))
-    return true
-  }
-  if (message?.type === "clear-prompt-history") {
-    clearPromptHistory()
-      .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: error.message }))
     return true
   }

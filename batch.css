@@ -158,6 +158,13 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
+}
+
+.history-count-label {
+  font-size: 13px;
+  color: #94a3b8;
+  padding: 8px 4px;
 }
 
 .btn {

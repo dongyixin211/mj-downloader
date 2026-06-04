@@ -117,16 +117,6 @@ async function getPromptHistoryCount() {
   })
 }
 
-async function clearPromptHistory() {
-  const db = await openPromptHistoryDb()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PROMPT_HISTORY_STORE, "readwrite")
-    tx.objectStore(PROMPT_HISTORY_STORE).clear()
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
-}
-
 async function getRecentPrompts(limit = 50) {
   const db = await openPromptHistoryDb()
   return new Promise((resolve, reject) => {

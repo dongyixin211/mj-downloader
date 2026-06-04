@@ -1,6 +1,31 @@
 /** 下载 URL / 文件名工具（background 与 content script 共用） */
 const MJ_CDN_PATTERN = /cdn\.midjourney\.com/i
 
+const DOWNLOAD_NAMING_MODE_KEY = "bdduckDownloadNamingMode"
+const DOWNLOAD_CONFLICT_ACTION_KEY = "bdduckDownloadConflictAction"
+const DOWNLOAD_SEQ_DATE_KEY = "bdduckDownloadSeqDate"
+const DOWNLOAD_SEQ_COUNTER_KEY = "bdduckDownloadSeqCounter"
+const DOWNLOAD_NAMING_SEQUENTIAL = "sequential"
+const DOWNLOAD_NAMING_DEFAULT = "default"
+const DOWNLOAD_CONFLICT_PROMPT = "prompt"
+const DOWNLOAD_CONFLICT_UNIQUIFY = "uniquify"
+const DOWNLOAD_CONFLICT_OVERWRITE = "overwrite"
+const SEQUENTIAL_INDEX_PAD = 6
+
+function formatDateYmd(date = new Date()) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}${m}${d}`
+}
+
+function inferDownloadExtension(url, fallback = ".webp") {
+  const text = String(url || "")
+  const match = text.match(/\.(webp|png|jpe?g|gif)(\?|#|$)/i)
+  if (match) return `.${match[1].toLowerCase()}`
+  return fallback.startsWith(".") ? fallback : `.${fallback}`
+}
+
 function normalizeImageUrl(url) {
   if (!url) return ""
   let normalized = url.trim().replace(/&amp;/g, "&")
@@ -92,4 +117,19 @@ function buildDownloadPath(downloadSubDir, promptFolder, filename) {
   if (promptFolder) parts.push(promptFolder)
   if (filename) parts.push(filename)
   return parts.filter(Boolean).join("/")
+}
+
+function buildSequentialBasename(counter, dateYmd, ext) {
+  const safeExt = ext.startsWith(".") ? ext : `.${ext}`
+  return `${dateYmd}_${String(counter).padStart(SEQUENTIAL_INDEX_PAD, "0")}${safeExt}`
+}
+
+/** 顺序命名时 content 侧占位路径（实际序号在 background 分配） */
+function buildSequentialPlaceholderPath(downloadSubDir, ext = ".webp") {
+  const safeExt = ext.startsWith(".") ? ext : `.${ext}`
+  const placeholder = `_bdduck_seq_${safeExt}`
+  if (downloadSubDir) {
+    return `${downloadSubDir.replace(/^\/+|\/+$/g, "")}/${placeholder}`
+  }
+  return placeholder
 }

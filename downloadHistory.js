@@ -9,8 +9,12 @@ const DOWNLOAD_HISTORY_VERSION = 1
 /** 从 CDN URL 生成稳定短 key（webp/png 同一 key） */
 function imageKeyFromUrl(url) {
   if (!url) return ""
+  if (url.startsWith("data:")) return ""
   try {
     const parsed = new URL(url)
+    if (!MJ_CDN_PATTERN.test(parsed.href)) {
+      return ""
+    }
     const segments = parsed.pathname.split("/").filter(Boolean)
     if (segments.length >= 2) {
       const jobId = segments[segments.length - 2]
@@ -129,15 +133,5 @@ async function getDownloadHistoryCount() {
     const req = tx.objectStore(DOWNLOAD_HISTORY_STORE).count()
     req.onsuccess = () => resolve(req.result ?? 0)
     req.onerror = () => reject(req.error)
-  })
-}
-
-async function clearDownloadHistory() {
-  const db = await openDownloadHistoryDb()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DOWNLOAD_HISTORY_STORE, "readwrite")
-    tx.objectStore(DOWNLOAD_HISTORY_STORE).clear()
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
   })
 }
