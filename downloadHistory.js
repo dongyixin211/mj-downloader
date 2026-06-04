@@ -65,7 +65,10 @@ async function markImageDownloaded(url) {
       key,
       downloadedAt: Date.now(),
     })
-    tx.oncomplete = () => resolve(key)
+    tx.oncomplete = () => {
+      scheduleProjectHistorySync()
+      resolve(key)
+    }
     tx.onerror = () => reject(tx.error)
   })
 }
@@ -132,6 +135,16 @@ async function getDownloadHistoryCount() {
     const tx = db.transaction(DOWNLOAD_HISTORY_STORE, "readonly")
     const req = tx.objectStore(DOWNLOAD_HISTORY_STORE).count()
     req.onsuccess = () => resolve(req.result ?? 0)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function exportAllDownloadHistoryRecords() {
+  const db = await openDownloadHistoryDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DOWNLOAD_HISTORY_STORE, "readonly")
+    const req = tx.objectStore(DOWNLOAD_HISTORY_STORE).getAll()
+    req.onsuccess = () => resolve(req.result || [])
     req.onerror = () => reject(req.error)
   })
 }

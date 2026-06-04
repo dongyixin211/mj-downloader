@@ -82,6 +82,25 @@
         </div>
       </section>
 
+      <section class="card project-sync-card">
+        <div class="project-sync-head">
+          <strong>项目记录同步（Git）</strong>
+        </div>
+        <p class="hint">
+          记录文件位于项目 <code>data/download-history.json</code>、
+          <code>data/prompt-history.json</code>，绑定后可写入磁盘并提交 Git。
+        </p>
+        <p id="project-sync-status" class="project-sync-status">加载中…</p>
+        <div class="actions">
+          <button id="bind-project-data-btn" type="button" class="btn secondary">
+            绑定项目 data 目录
+          </button>
+          <button id="sync-project-history-btn" type="button" class="btn secondary">
+            立即同步全部记录到项目
+          </button>
+        </div>
+      </section>
+
       <section class="card">
         <div class="progress-head">
           <strong>任务进度</strong>

@@ -1,12 +1,6 @@
 /**
- * 下载/查询记录备份：导出、合并导入、与仓库 data/mj-history-backup.json 同步。
- * 仅在 background service worker 中加载。
+ * 从项目 data/*.json 合并导入 IndexedDB（仅追加/更新）。
  */
-const HISTORY_BACKUP_VERSION = 1
-const HISTORY_BACKUP_PATH = "data/mj-history-backup.json"
-const LAST_IMPORTED_BACKUP_AT_KEY = "bdduckLastImportedBackupExportedAt"
-
-/** 仅追加/合并：不删除 IndexedDB 中已有、备份里没有的记录 */
 async function importDownloadHistoryRecords(records) {
   if (!Array.isArray(records) || !records.length) {
     return { imported: 0 }
@@ -52,49 +46,4 @@ async function importPromptHistoryRecords(records) {
     tx.oncomplete = () => resolve({ imported })
     tx.onerror = () => reject(tx.error)
   })
-}
-
-async function importCombinedHistoryBackup(backup) {
-  if (!backup || backup.version !== HISTORY_BACKUP_VERSION) {
-    throw new Error("备份格式无效或版本不匹配")
-  }
-  const [downloadResult, promptResult] = await Promise.all([
-    importDownloadHistoryRecords(backup.downloadHistory),
-    importPromptHistoryRecords(backup.promptHistory),
-  ])
-  return {
-    downloadImported: downloadResult.imported,
-    promptImported: promptResult.imported,
-  }
-}
-
-async function importBundledHistoryBackupIfNeeded() {
-  try {
-    const url = chrome.runtime.getURL(HISTORY_BACKUP_PATH)
-    const response = await fetch(url)
-    if (!response.ok) return { skipped: true, reason: "no_file" }
-
-    const backup = await response.json()
-    const total =
-      (backup.downloadHistory?.length || 0) +
-      (backup.promptHistory?.length || 0)
-    if (total === 0) return { skipped: true, reason: "empty" }
-
-    const { [LAST_IMPORTED_BACKUP_AT_KEY]: lastAt } =
-      await chrome.storage.local.get(LAST_IMPORTED_BACKUP_AT_KEY)
-    if (backup.exportedAt && lastAt === backup.exportedAt) {
-      return { skipped: true, reason: "already_imported" }
-    }
-
-    const result = await importCombinedHistoryBackup(backup)
-    if (backup.exportedAt) {
-      await chrome.storage.local.set({
-        [LAST_IMPORTED_BACKUP_AT_KEY]: backup.exportedAt,
-      })
-    }
-    return { skipped: false, ...result }
-  } catch (error) {
-    console.warn("导入仓库历史备份失败:", error)
-    return { skipped: true, reason: "error", error: error.message }
-  }
 }

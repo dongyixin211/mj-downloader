@@ -4,6 +4,7 @@ importScripts(
   "downloadHistory.js",
   "promptHistory.js",
   "historyBackup.js",
+  "projectHistorySync.js",
   "batchOrchestrator.js",
 )
 
@@ -289,7 +290,7 @@ function scheduleExpiryChecks() {
 }
 
 function runHistoryBackupImport() {
-  importBundledHistoryBackupIfNeeded().catch(() => {})
+  importProjectHistoryFromBundledFiles().catch(() => {})
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -411,6 +412,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "get-prompt-history-count") {
     getPromptHistoryCount()
       .then((count) => sendResponse({ ok: true, count }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+  if (message?.type === "get-project-sync-status") {
+    getProjectSyncStatus()
+      .then((status) => sendResponse({ ok: true, status }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+  if (message?.type === "sync-all-history-to-project") {
+    syncAllHistoryToProjectFiles()
+      .then((result) => sendResponse({ ok: true, result }))
       .catch((error) => sendResponse({ ok: false, error: error.message }))
     return true
   }

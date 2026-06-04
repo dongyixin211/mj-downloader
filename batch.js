@@ -15,8 +15,15 @@ const progressFill = document.getElementById("progress-fill")
 const currentPromptsEl = document.getElementById("current-prompts")
 const logList = document.getElementById("log-list")
 const openMjBtn = document.getElementById("open-mj-btn")
+const projectSyncStatusEl = document.getElementById("project-sync-status")
+const bindProjectDataBtn = document.getElementById("bind-project-data-btn")
+const syncProjectHistoryBtn = document.getElementById("sync-project-history-btn")
 
 const PROMPTS_DRAFT_KEY = "bdduck-batch-prompts-draft"
+const PROJECT_SYNC_DB = "bdduck_project_sync"
+const PROJECT_SYNC_STORE = "handles"
+const PROJECT_DATA_DIR_HANDLE_KEY = "dataDir"
+const PROJECT_DATA_DIR_NAME_KEY = "bdduckProjectDataDirName"
 
 function sendMessage(payload, retries = 4) {
   return new Promise((resolve, reject) => {
@@ -233,6 +240,105 @@ openMjBtn.addEventListener("click", () => {
   chrome.tabs.create({ url: "https://www.midjourney.com/explore?tab=top" })
 })
 
+function openProjectSyncDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(PROJECT_SYNC_DB, 1)
+    request.onerror = () => reject(request.error)
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result
+      if (!db.objectStoreNames.contains(PROJECT_SYNC_STORE)) {
+        db.createObjectStore(PROJECT_SYNC_STORE)
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+  })
+}
+
+async function saveProjectDataDirHandleFromPage(handle, displayName) {
+  const db = await openProjectSyncDb()
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(PROJECT_SYNC_STORE, "readwrite")
+    tx.objectStore(PROJECT_SYNC_STORE).put(handle, PROJECT_DATA_DIR_HANDLE_KEY)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  await chrome.storage.local.set({
+    [PROJECT_DATA_DIR_NAME_KEY]: displayName || "",
+  })
+}
+
+async function refreshProjectSyncStatus() {
+  if (!projectSyncStatusEl) return
+  try {
+    const { status } = await sendMessage({ type: "get-project-sync-status" })
+    if (!status?.bound) {
+      projectSyncStatusEl.textContent =
+        `未绑定。浏览器内：下载 ${status?.downloadCount ?? "?"} 条，查询 ${status?.promptCount ?? "?"} 条。请绑定本项目 data 文件夹后同步到磁盘。`
+      return
+    }
+    projectSyncStatusEl.textContent =
+      `已绑定：${status.dirName || "data 目录"} · 浏览器内下载 ${status.downloadCount} 条 / 查询 ${status.promptCount} 条 · 文件：${status.files?.download}、${status.files?.prompt}`
+  } catch {
+    projectSyncStatusEl.textContent = "无法读取同步状态"
+  }
+}
+
+bindProjectDataBtn?.addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) {
+    alert("请使用 Chrome 浏览器，并确保扩展已重新加载。")
+    return
+  }
+  bindProjectDataBtn.disabled = true
+  try {
+    const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" })
+    await saveProjectDataDirHandleFromPage(dirHandle, dirHandle.name)
+    const { result } = await sendMessage({ type: "sync-all-history-to-project" })
+    if (!result?.ok) {
+      alert(
+        result?.reason === "permission_denied"
+          ? "未获得文件夹写入权限，请允许后重试。"
+          : "绑定成功，但同步失败：" + (result?.reason || "未知错误"),
+      )
+    } else {
+      alert(
+        `已绑定并同步到项目 data 目录。\n\n下载记录 ${result.downloadCount} 条\n查询记录 ${result.promptCount} 条\n\n请用 Git 提交 data/*.json 文件。`,
+      )
+    }
+    await refreshProjectSyncStatus()
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      alert(error.message || String(error))
+    }
+  } finally {
+    bindProjectDataBtn.disabled = false
+  }
+})
+
+syncProjectHistoryBtn?.addEventListener("click", async () => {
+  syncProjectHistoryBtn.disabled = true
+  try {
+    const { result } = await sendMessage({ type: "sync-all-history-to-project" })
+    if (!result?.ok) {
+      if (result?.reason === "no_dir") {
+        alert("请先点击「绑定项目 data 目录」，选择本项目下的 data 文件夹。")
+      } else if (result?.reason === "permission_denied") {
+        alert("没有写入权限。请重新绑定 data 目录并允许访问。")
+      } else {
+        alert("同步失败：" + (result?.reason || "未知错误"))
+      }
+      return
+    }
+    alert(
+      `已写入项目文件。\n\n下载记录 ${result.downloadCount} 条\n查询记录 ${result.promptCount} 条\n\n路径：data/download-history.json、data/prompt-history.json`,
+    )
+    await refreshProjectSyncStatus()
+  } catch (error) {
+    alert(error.message || String(error))
+  } finally {
+    syncProjectHistoryBtn.disabled = false
+  }
+})
+
 let previewTimer = null
 promptsInput.addEventListener("input", () => {
   saveDraft()
@@ -255,6 +361,7 @@ ensureBackgroundReady()
   .then(() => {
     refreshHistoryCount()
     refreshPreview()
+    refreshProjectSyncStatus()
     syncProgress()
   })
   .catch(() => {

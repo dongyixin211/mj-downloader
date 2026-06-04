@@ -45,7 +45,10 @@ async function markPromptQueried(prompt, meta = {}) {
       imageCount: meta.imageCount ?? 0,
       downloadedCount: meta.downloadedCount ?? 0,
     })
-    tx.oncomplete = () => resolve(key)
+    tx.oncomplete = () => {
+      scheduleProjectHistorySync()
+      resolve(key)
+    }
     tx.onerror = () => reject(tx.error)
   })
 }
@@ -113,6 +116,16 @@ async function getPromptHistoryCount() {
     const tx = db.transaction(PROMPT_HISTORY_STORE, "readonly")
     const req = tx.objectStore(PROMPT_HISTORY_STORE).count()
     req.onsuccess = () => resolve(req.result ?? 0)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function exportAllPromptHistoryRecords() {
+  const db = await openPromptHistoryDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PROMPT_HISTORY_STORE, "readonly")
+    const req = tx.objectStore(PROMPT_HISTORY_STORE).getAll()
+    req.onsuccess = () => resolve(req.result || [])
     req.onerror = () => reject(req.error)
   })
 }
