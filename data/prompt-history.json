@@ -1,8 +1,22 @@
 {
   "version": 1,
-  "updatedAt": "2026-06-04T14:41:22.922Z",
-  "recordCount": 10,
+  "updatedAt": "2026-06-14T13:25:51.573Z",
+  "recordCount": 35,
   "records": [
+    {
+      "key": "abstract ink splash brush seamless pattern flat artistic fashion textile",
+      "prompt": "abstract ink splash brush seamless pattern flat artistic fashion textile",
+      "queriedAt": 1781433475051,
+      "imageCount": 877,
+      "downloadedCount": 359
+    },
+    {
+      "key": "african wax print inspired geometric seamless pattern flat vibrant textile print",
+      "prompt": "african wax print inspired geometric seamless pattern flat vibrant textile print",
+      "queriedAt": 1781434819423,
+      "imageCount": 893,
+      "downloadedCount": 202
+    },
     {
       "key": "boho tribal stripes seamless pattern flat headband design",
       "prompt": "boho tribal stripes seamless pattern flat headband design",
@@ -18,6 +32,34 @@
       "downloadedCount": 673
     },
     {
+      "key": "bold checkerboard fashion seamless pattern flat graphic textile print",
+      "prompt": "bold checkerboard fashion seamless pattern flat graphic textile print",
+      "queriedAt": 1781434096890,
+      "imageCount": 828,
+      "downloadedCount": 161
+    },
+    {
+      "key": "boucle knit texture seamless pattern flat cozy fashion accessory print",
+      "prompt": "boucle knit texture seamless pattern flat cozy fashion accessory print",
+      "queriedAt": 1781432766340,
+      "imageCount": 829,
+      "downloadedCount": 115
+    },
+    {
+      "key": "bubble pop abstract circles seamless pattern flat pastel pop art fabric",
+      "prompt": "bubble pop abstract circles seamless pattern flat pastel pop art fabric",
+      "queriedAt": 1781429559002,
+      "imageCount": 875,
+      "downloadedCount": 337
+    },
+    {
+      "key": "crochet lace geometric pattern seamless repeat flat textile headband design",
+      "prompt": "crochet lace geometric pattern seamless repeat flat textile headband design",
+      "queriedAt": 1781433092946,
+      "imageCount": 800,
+      "downloadedCount": 279
+    },
+    {
       "key": "cute fruit kawaii seamless print flat textile accessory",
       "prompt": "cute fruit kawaii seamless print flat textile accessory",
       "queriedAt": 1780577399587,
@@ -25,11 +67,95 @@
       "downloadedCount": 908
     },
     {
+      "key": "cute stationery icons pens stars clips seamless pattern flat textile",
+      "prompt": "cute stationery icons pens stars clips seamless pattern flat textile",
+      "queriedAt": 1781429182728,
+      "imageCount": 881,
+      "downloadedCount": 290
+    },
+    {
+      "key": "cyber y2k neon grid seamless pattern flat textile headband print ready",
+      "prompt": "cyber y2k neon grid seamless pattern flat textile headband print ready",
+      "queriedAt": 1781427835834,
+      "imageCount": 805,
+      "downloadedCount": 615
+    },
+    {
+      "key": "dark techwear cyber grid circuit seamless pattern flat urban fashion textile",
+      "prompt": "dark techwear cyber grid circuit seamless pattern flat urban fashion textile",
+      "queriedAt": 1781430142251,
+      "imageCount": 841,
+      "downloadedCount": 632
+    },
+    {
+      "key": "denim texture woven seamless pattern flat fashion fabric print",
+      "prompt": "denim texture woven seamless pattern flat fashion fabric print",
+      "queriedAt": 1781432346662,
+      "imageCount": 881,
+      "downloadedCount": 198
+    },
+    {
+      "key": "fun animal cartoon seamless pattern flat fashion",
+      "prompt": "fun animal cartoon seamless pattern flat fashion",
+      "queriedAt": 1780585137728,
+      "imageCount": 290,
+      "downloadedCount": 290
+    },
+    {
+      "key": "glitch pixel distortion seamless pattern flat digital art fabric print",
+      "prompt": "glitch pixel distortion seamless pattern flat digital art fabric print",
+      "queriedAt": 1781430541805,
+      "imageCount": 896,
+      "downloadedCount": 382
+    },
+    {
+      "key": "holographic chrome liquid metal seamless pattern flat fashion accessory textile",
+      "prompt": "holographic chrome liquid metal seamless pattern flat fashion accessory textile",
+      "queriedAt": 1781428439563,
+      "imageCount": 853,
+      "downloadedCount": 648
+    },
+    {
+      "key": "japanese seigaiha wave pattern seamless flat traditional ocean motif textile",
+      "prompt": "japanese seigaiha wave pattern seamless flat traditional ocean motif textile",
+      "queriedAt": 1781434531847,
+      "imageCount": 876,
+      "downloadedCount": 425
+    },
+    {
+      "key": "kawaii stars and moons pastel seamless flat textile",
+      "prompt": "kawaii stars and moons pastel seamless flat textile",
+      "queriedAt": 1781427267566,
+      "imageCount": 883,
+      "downloadedCount": 668
+    },
+    {
+      "key": "kawaii sushi ramen snacks seamless pattern flat cute headband print",
+      "prompt": "kawaii sushi ramen snacks seamless pattern flat cute headband print",
+      "queriedAt": 1781428853228,
+      "imageCount": 832,
+      "downloadedCount": 408
+    },
+    {
+      "key": "minimal scandinavian dots and lines seamless headband",
+      "prompt": "minimal Scandinavian dots and lines seamless headband",
+      "queriedAt": 1781426671213,
+      "imageCount": 670,
+      "downloadedCount": 612
+    },
+    {
       "key": "modern minimal line art seamless headband flat style",
       "prompt": "modern minimal line art seamless headband flat style",
       "queriedAt": 1780578539441,
       "imageCount": 796,
       "downloadedCount": 779
+    },
+    {
+      "key": "modern terrazzo speckle seamless pattern flat minimalist textile background",
+      "prompt": "modern terrazzo speckle seamless pattern flat minimalist textile background",
+      "queriedAt": 1781432073295,
+      "imageCount": 849,
+      "downloadedCount": 177
     },
     {
       "key": "pastel geometric triangles seamless pattern flat textile",
@@ -46,6 +172,27 @@
       "downloadedCount": 579
     },
     {
+      "key": "retro colorful 90s shapes seamless pattern flat",
+      "prompt": "retro colorful 90s shapes seamless pattern flat",
+      "queriedAt": 1781426138440,
+      "imageCount": 850,
+      "downloadedCount": 690
+    },
+    {
+      "key": "snake skin scale texture seamless pattern flat exotic fashion print",
+      "prompt": "snake skin scale texture seamless pattern flat exotic fashion print",
+      "queriedAt": 1781431809297,
+      "imageCount": 894,
+      "downloadedCount": 291
+    },
+    {
+      "key": "soft gradient mesh blur seamless pattern flat modern digital fabric",
+      "prompt": "soft gradient mesh blur seamless pattern flat modern digital fabric",
+      "queriedAt": 1781433847938,
+      "imageCount": 886,
+      "downloadedCount": 342
+    },
+    {
       "key": "soft gradient ombre seamless flat textile headband",
       "prompt": "soft gradient ombre seamless flat textile headband",
       "queriedAt": 1780582540999,
@@ -53,11 +200,32 @@
       "downloadedCount": 839
     },
     {
+      "key": "summer citrus seamless print flat headband textile",
+      "prompt": "summer citrus seamless print flat headband textile",
+      "queriedAt": 1781425538152,
+      "imageCount": 873,
+      "downloadedCount": 873
+    },
+    {
       "key": "tropical leaf pattern seamless headband flat summer fashion",
       "prompt": "tropical leaf pattern seamless headband flat summer fashion",
       "queriedAt": 1780576946068,
       "imageCount": 896,
       "downloadedCount": 894
+    },
+    {
+      "key": "tweed fabric texture seamless pattern flat classic fashion textile",
+      "prompt": "tweed fabric texture seamless pattern flat classic fashion textile",
+      "queriedAt": 1781432556288,
+      "imageCount": 849,
+      "downloadedCount": 111
+    },
+    {
+      "key": "urban digital camouflage seamless pattern flat tactical fashion textile",
+      "prompt": "urban digital camouflage seamless pattern flat tactical fashion textile",
+      "queriedAt": 1781431039551,
+      "imageCount": 823,
+      "downloadedCount": 498
     },
     {
       "key": "vibrant floral tropical seamless flat textile print",
@@ -72,6 +240,13 @@
       "queriedAt": 1780581814062,
       "imageCount": 885,
       "downloadedCount": 814
+    },
+    {
+      "key": "zebra stripe high contrast seamless pattern flat fashion headband textile",
+      "prompt": "zebra stripe high contrast seamless pattern flat fashion headband textile",
+      "queriedAt": 1781431462034,
+      "imageCount": 783,
+      "downloadedCount": 422
     }
   ]
 }
